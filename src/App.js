@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Trash2, History, Clock, AlertTriangle, AlertCircle, Info, Zap, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Square, Trash2, History, Clock, AlertTriangle, AlertCircle, Zap, ShieldCheck } from 'lucide-react';
 
 const PartyDrinkTracker = () => {
   // ---------------- State Management ----------------
