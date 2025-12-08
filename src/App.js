@@ -113,7 +113,6 @@ const PartyDrinkTracker = () => {
 
   const closeModal = () => { setModalConfig(prev => ({ ...prev, isOpen: false })); };
 
-  // 更新邏輯：更簡潔的時間顯示，適合大字體
   const getTimeSinceLastDrink = (drinkIcon) => {
     const lastRecord = records.find(r => r.icon === drinkIcon);
     if (!lastRecord) return null;
@@ -306,7 +305,6 @@ const PartyDrinkTracker = () => {
             <div className="grid grid-cols-1 gap-3 animate-fade-in-up">
               {DRINK_CONFIG.map((drink) => {
                 const timeSince = getTimeSinceLastDrink(drink.icon);
-                // 計算該飲料目前的總杯數
                 const drinkTotal = records.filter(r => r.icon === drink.icon).reduce((acc, curr) => acc + curr.totalAmount, 0);
 
                 return (
@@ -315,13 +313,11 @@ const PartyDrinkTracker = () => {
                       {/* Icon */}
                       <div className="text-4xl filter drop-shadow-lg">{drink.icon}</div>
                       
-                      {/* 中間資訊欄：累計 + 時間 (主要修改處) */}
+                      {/* 中間資訊欄：累計 + 時間 */}
                       <div className="flex flex-col items-start min-w-[70px]">
-                        {/* 總數 */}
                         <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">
                            Total: <span className="text-white text-sm">{drinkTotal}</span>
                         </div>
-                        {/* 大字體計時器 */}
                         {timeSince ? (
                           <div className="text-2xl font-bold font-mono text-emerald-400 leading-none">
                             {timeSince}
@@ -402,19 +398,7 @@ const PartyDrinkTracker = () => {
         )}
       </main>
 
-      {/* Footer Summary (Active Only) - Optional now since we have totals in rows, but good for overview */}
-      {partyStatus === 'active' && (
-        <div className="bg-slate-900/90 backdrop-blur-xl p-4 border-t border-slate-800 z-20 safe-area-bottom shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-           <div className="grid grid-cols-5 gap-2 text-center">
-             {Object.entries(summaryData).map(([icon, total]) => (
-                <div key={icon} className="flex flex-col items-center group cursor-default">
-                  <span className="text-xs opacity-40 mb-1 group-hover:opacity-100 transition-opacity transform group-hover:-translate-y-1 duration-200">{icon}</span>
-                  <span className={`font-bold font-mono text-lg ${total > 0 ? 'text-white scale-110' : 'text-slate-700'} transition-all`}>{total}</span>
-                </div>
-             ))}
-           </div>
-        </div>
-      )}
+      {/* Footer Summary removed here */}
 
       {/* Modal */}
       {modalConfig.isOpen && (
