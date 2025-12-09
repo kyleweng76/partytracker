@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Play, Square, Trash2, History, Clock, 
   AlertTriangle, AlertCircle, Zap, ShieldCheck, 
-  Settings, X, ArrowUp, ArrowDown, LayoutList, PlusCircle, RotateCcw 
+  Settings, X, ArrowUp, ArrowDown, LayoutList, PlusCircle, RotateCcw, Pencil, ChevronLeft, Save, RefreshCw, List, ScrollText, Copy, RotateCw
 } from 'lucide-react';
 
 // --- 內嵌 SVG Logo 元件 ---
@@ -52,24 +52,8 @@ const STATIC_DRINK_KV = {
   whiskey: { id: 'whiskey', name: '烈酒', icon: '🥃', portions: [1] },
 };
 
-// 預設的版面配置
-const DEFAULT_LAYOUT = [
-  {
-    id: 'block_classic',
-    title: '派對區',
-    drinks: ['wine', 'water', 'melon', 'sake']
-  },
-  {
-    id: 'block_party',
-    title: '經典區',
-    drinks: ['beer', 'whiskey']
-  },
-  {
-    id: 'block_custom',
-    title: '自定義',
-    drinks: []
-  }
-];
+// 預設的版面配置 (扁平化列表)
+const DEFAULT_LAYOUT = ['wine', 'water', 'melon', 'sake', 'beer', 'whiskey'];
 
 // 提供給用戶選擇的 Emoji 列表
 const EMOJI_OPTIONS = ['🥂', '🍹', '🍸', '🧉', '🍾', '🥤', '🧋', '🥛', '☕', '🍵', '🧃', '🥥', '🌳', '🌹'];
@@ -86,25 +70,47 @@ const PartyDrinkTracker = () => {
   const [isExpertMode, setIsExpertMode] = useState(false);
   const [requireAddConfirm, setRequireAddConfirm] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false); 
+  const [settingsView, setSettingsView] = useState('main'); 
   
   // Layout & Custom Drinks
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [customDrinks, setCustomDrinks] = useState({});
+  const [drinkNameOverrides, setDrinkNameOverrides] = useState({});
+  const [drinkEmojiOverrides, setDrinkEmojiOverrides] = useState({});
+
+  // UI State for Editing
+  const [editingEmojiId, setEditingEmojiId] = useState(null);
 
   // Add Custom Drink Modal State
   const [isAddDrinkModalOpen, setIsAddDrinkModalOpen] = useState(false);
   const [newDrinkName, setNewDrinkName] = useState('');
   const [newDrinkIcon, setNewDrinkIcon] = useState(EMOJI_OPTIONS[0]);
 
-  // Unified Drinks Data (Static + Custom)
-  const allDrinks = useMemo(() => ({ ...STATIC_DRINK_KV, ...customDrinks }), [customDrinks]);
+  // Unified Drinks Data (Static + Custom + Overrides)
+  const allDrinks = useMemo(() => {
+    const combined = { ...STATIC_DRINK_KV, ...customDrinks };
+    const final = {};
+    Object.keys(combined).forEach(key => {
+      final[key] = {
+        ...combined[key],
+        name: drinkNameOverrides[key] || combined[key].name,
+        icon: drinkEmojiOverrides[key] || combined[key].icon
+      };
+    });
+    return final;
+  }, [customDrinks, drinkNameOverrides, drinkEmojiOverrides]);
 
   // Modal State
   const [modalConfig, setModalConfig] = useState({
     isOpen: false,
-    type: 'confirm', 
+    type: 'confirm', // 'confirm', 'warning', or 'choice'
     message: '',
+    confirmText: '確定',
+    cancelText: '取消',
+    secondaryText: '', // For choice modal
     onConfirm: () => {},
+    onSecondary: () => {}, // For choice modal
   });
 
   // ---------------- Effects ----------------
@@ -139,27 +145,64 @@ const PartyDrinkTracker = () => {
       setIsExpertMode(parsed.isExpertMode || false);
       setRequireAddConfirm(parsed.requireAddConfirm !== undefined ? parsed.requireAddConfirm : true);
       
-      if (parsed.layout) setLayout(parsed.layout);
       if (parsed.customDrinks) setCustomDrinks(parsed.customDrinks);
+      if (parsed.drinkNameOverrides) setDrinkNameOverrides(parsed.drinkNameOverrides);
+      if (parsed.drinkEmojiOverrides) setDrinkEmojiOverrides(parsed.drinkEmojiOverrides);
+
+      if (parsed.layout) {
+        if (Array.isArray(parsed.layout) && parsed.layout.length > 0 && typeof parsed.layout[0] === 'object') {
+          const flatList = parsed.layout.flatMap(section => section.drinks);
+          setLayout(flatList);
+        } else {
+          setLayout(parsed.layout);
+        }
+      }
     }
   }, []);
 
   useEffect(() => {
     const dataToSave = { 
       partyStatus, startTime, endTime, records, 
-      isExpertMode, requireAddConfirm, layout, customDrinks 
+      isExpertMode, requireAddConfirm, layout, customDrinks, drinkNameOverrides, drinkEmojiOverrides
     };
     localStorage.setItem('party_tracker_data', JSON.stringify(dataToSave));
-  }, [partyStatus, startTime, endTime, records, isExpertMode, requireAddConfirm, layout, customDrinks]);
+  }, [partyStatus, startTime, endTime, records, isExpertMode, requireAddConfirm, layout, customDrinks, drinkNameOverrides, drinkEmojiOverrides]);
 
   // ---------------- Helpers ----------------
 
-  const openConfirmModal = (message, action) => {
-    setModalConfig({ isOpen: true, type: 'confirm', message, onConfirm: () => { action(); setModalConfig(prev => ({ ...prev, isOpen: false })); }});
+  const openConfirmModal = (message, action, confirmText = '確定', cancelText = '取消') => {
+    setModalConfig({ 
+      isOpen: true, 
+      type: 'confirm', 
+      message, 
+      confirmText,
+      cancelText,
+      onConfirm: () => { action(); closeModal(); }
+    });
   };
 
   const openWarningModal = (message, nextAction) => {
-    setModalConfig({ isOpen: true, type: 'warning', message, onConfirm: () => { setModalConfig(prev => ({ ...prev, isOpen: false })); if (nextAction) setTimeout(nextAction, 100); }});
+    setModalConfig({ 
+      isOpen: true, 
+      type: 'warning', 
+      message, 
+      confirmText: '我了解了',
+      cancelText: '取消',
+      onConfirm: () => { closeModal(); if (nextAction) setTimeout(nextAction, 100); }
+    });
+  };
+
+  const openChoiceModal = (message, confirmAction, secondaryAction, confirmText = '保留設定', secondaryText = '恢復預設') => {
+    setModalConfig({
+      isOpen: true,
+      type: 'choice',
+      message,
+      confirmText,
+      secondaryText,
+      cancelText: '取消',
+      onConfirm: () => { confirmAction(); closeModal(); },
+      onSecondary: () => { secondaryAction(); closeModal(); }
+    });
   };
 
   const closeModal = () => { setModalConfig(prev => ({ ...prev, isOpen: false })); };
@@ -183,7 +226,7 @@ const PartyDrinkTracker = () => {
     return `${hours}小時${mins}分鐘`;
   };
 
-  // ---------------- Custom Drink & Layout Logic ----------------
+  // ---------------- Logic ----------------
 
   const handleCreateDrink = () => {
     if (!newDrinkName.trim()) {
@@ -201,33 +244,77 @@ const PartyDrinkTracker = () => {
     };
 
     setCustomDrinks(prev => ({ ...prev, [newId]: newDrink }));
-
-    setLayout(prev => {
-      const newLayout = [...prev];
-      let customBlockIndex = newLayout.findIndex(b => b.id === 'block_custom');
-      
-      if (customBlockIndex === -1) {
-        newLayout.push({ id: 'block_custom', title: '自定義', drinks: [newId] });
-      } else {
-        const updatedBlock = { ...newLayout[customBlockIndex] };
-        updatedBlock.drinks = [...updatedBlock.drinks, newId];
-        newLayout[customBlockIndex] = updatedBlock;
-      }
-      return newLayout;
-    });
-
+    setLayout(prev => [...prev, newId]);
     setNewDrinkName('');
     setIsAddDrinkModalOpen(false);
   };
 
-  const handleResetLayout = () => {
-    openConfirmModal('確定要恢復預設值嗎？這將會移除所有自定義飲品並恢復原本預設的排序位置。', () => {
+  const handleRestoreFactorySettings = () => {
+    openConfirmModal('確定要恢復原廠設定嗎？這將移除所有自定義飲品、名稱與 Emoji 修改，並重置清單順序。', () => {
       setLayout(DEFAULT_LAYOUT);
       setCustomDrinks({});
+      setDrinkNameOverrides({});
+      setDrinkEmojiOverrides({});
+    });
+  };
+
+  const handleResetAllSettings = () => {
+    openConfirmModal('確定要重置所有設定嗎？這將恢復預設版面、移除自定義飲品與名稱修改。\n\n注意：這「不會」停止目前的派對計時，也「不會」刪除您的飲酒紀錄。', () => {
+      setLayout(DEFAULT_LAYOUT);
+      setCustomDrinks({});
+      setDrinkNameOverrides({});
+      setDrinkEmojiOverrides({});
+      setIsSettingsOpen(false);
     });
   };
   
-  const moveSection = (index, direction) => {
+  const handleUpdateName = (id, newName) => {
+    if (customDrinks[id]) {
+      setCustomDrinks(prev => ({ ...prev, [id]: { ...prev[id], name: newName } }));
+    } else {
+      setDrinkNameOverrides(prev => ({ ...prev, [id]: newName }));
+    }
+  };
+
+  const handleUpdateEmoji = (id, newEmoji) => {
+    if (customDrinks[id]) {
+      setCustomDrinks(prev => ({ ...prev, [id]: { ...prev[id], icon: newEmoji } }));
+    } else {
+      setDrinkEmojiOverrides(prev => ({ ...prev, [id]: newEmoji }));
+    }
+    setEditingEmojiId(null);
+  };
+
+  const handleRestoreDefault = (id) => {
+    if (drinkNameOverrides[id]) {
+      const newNameOverrides = { ...drinkNameOverrides };
+      delete newNameOverrides[id];
+      setDrinkNameOverrides(newNameOverrides);
+    }
+    if (drinkEmojiOverrides[id]) {
+      const newEmojiOverrides = { ...drinkEmojiOverrides };
+      delete newEmojiOverrides[id];
+      setDrinkEmojiOverrides(newEmojiOverrides);
+    }
+  };
+
+  const handleDeleteDrink = (id) => {
+    if (layout.length <= 1) {
+      openWarningModal('無法刪除：清單中至少必須保留一個飲品。');
+      return;
+    }
+
+    openConfirmModal('確定要從清單中移除這個飲品嗎？', () => {
+      setLayout(prev => prev.filter(drinkId => drinkId !== id));
+      if (customDrinks[id]) {
+        const newCustomDrinks = { ...customDrinks };
+        delete newCustomDrinks[id];
+        setCustomDrinks(newCustomDrinks);
+      }
+    });
+  };
+
+  const moveDrink = (index, direction) => {
     const newLayout = [...layout];
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= newLayout.length) return;
@@ -235,16 +322,53 @@ const PartyDrinkTracker = () => {
     setLayout(newLayout);
   };
 
-  const moveDrink = (sectionIndex, drinkIndex, direction) => {
-    const newLayout = [...layout];
-    const section = { ...newLayout[sectionIndex] };
-    const drinks = [...section.drinks];
-    const targetIndex = drinkIndex + direction;
-    if (targetIndex < 0 || targetIndex >= drinks.length) return;
-    [drinks[drinkIndex], drinks[targetIndex]] = [drinks[targetIndex], drinks[drinkIndex]];
-    section.drinks = drinks;
-    newLayout[sectionIndex] = section;
-    setLayout(newLayout);
+  // ---------------- Start New Session Logic ----------------
+
+  const hasCustomSettings = useMemo(() => {
+    const isLayoutChanged = JSON.stringify(layout) !== JSON.stringify(DEFAULT_LAYOUT);
+    const hasCustomDrinks = Object.keys(customDrinks).length > 0;
+    const hasOverrides = Object.keys(drinkNameOverrides).length > 0 || Object.keys(drinkEmojiOverrides).length > 0;
+    return isLayoutChanged || hasCustomDrinks || hasOverrides;
+  }, [layout, customDrinks, drinkNameOverrides, drinkEmojiOverrides]);
+
+  const resetSessionKeepSettings = () => {
+    setPartyStatus('idle'); 
+    setStartTime(null); 
+    setEndTime(null); 
+    setRecords([]); 
+    setIsExpertMode(false);
+    setRequireAddConfirm(true); // Reset to safe default on new session
+  };
+
+  const resetSessionAndSettings = () => {
+    setPartyStatus('idle'); 
+    setStartTime(null); 
+    setEndTime(null); 
+    setRecords([]); 
+    setIsExpertMode(false); 
+    setRequireAddConfirm(true);
+    localStorage.removeItem('party_tracker_data');
+    setLayout(DEFAULT_LAYOUT); 
+    setCustomDrinks({}); 
+    setDrinkNameOverrides({});
+    setDrinkEmojiOverrides({});
+  };
+
+  const handleStartNewSession = () => {
+    if (hasCustomSettings) {
+      openChoiceModal(
+        '偵測到您有自定義的飲品或排序。新的一局想要沿用這些設定，還是恢復原廠預設值？',
+        resetSessionKeepSettings, 
+        resetSessionAndSettings,  
+        '沿用設定',
+        '恢復預設'
+      );
+    } else {
+      openConfirmModal(
+        '確定要清除所有資料並開始新的一局嗎？',
+        resetSessionAndSettings 
+      );
+    }
   };
 
   // ---------------- Main Logic ----------------
@@ -259,17 +383,30 @@ const PartyDrinkTracker = () => {
     setIsSettingsOpen(false);
   };
 
-  const handleStartSafeParty = () => { setIsExpertMode(false); startPartyLogic(); };
-  const handleStartExpertParty = () => { openWarningModal('請理解在此模式下不會跳出任何警示視窗，請自行留意安全。', () => { setIsExpertMode(true); startPartyLogic(); }); };
+  const handleStartSafeParty = () => { 
+    setIsExpertMode(false); 
+    setRequireAddConfirm(true); // Ensure confirmation is on
+    startPartyLogic(); 
+  };
+
+  const handleStartExpertParty = () => { 
+    openWarningModal('請理解在此模式下不會跳出任何警示視窗，請自行留意安全。', () => { 
+      setIsExpertMode(true); 
+      setRequireAddConfirm(false); // Auto disable confirmation for Turbo
+      startPartyLogic(); 
+    }); 
+  };
 
   const toggleMode = () => {
     if (isExpertMode) {
       openConfirmModal('確定要關閉 TURBO 模式嗎？將會恢復所有安全與健康警示。', () => {
         setIsExpertMode(false);
+        setRequireAddConfirm(true); // Auto enable confirmation when leaving Turbo
       });
     } else {
       openWarningModal('開啟 TURBO 模式：請理解在此模式下不會跳出任何警示視窗，請自行留意安全。', () => {
         setIsExpertMode(true);
+        setRequireAddConfirm(false); // Auto disable confirmation when entering Turbo
       });
     }
   };
@@ -279,70 +416,56 @@ const PartyDrinkTracker = () => {
       setEndTime(new Date().toISOString()); 
       setPartyStatus('ended'); 
       setIsSettingsOpen(false);
+      setIsHistoryOpen(false);
     }); 
   };
 
   const handleClearHistory = () => {
     openConfirmModal('確定要清空所有飲酒紀錄嗎？派對計時器將會繼續執行，且不會清除自定義飲品內容。', () => {
       setRecords([]);
-      setIsSettingsOpen(false);
-    });
-  };
-
-  const handleReset = () => {
-    openConfirmModal('確定要清除所有資料並開始新的一局嗎？', () => {
-      setPartyStatus('idle'); setStartTime(null); setEndTime(null); setRecords([]); setIsExpertMode(false); localStorage.removeItem('party_tracker_data');
-      setLayout(DEFAULT_LAYOUT); 
-      setCustomDrinks({}); 
+      setIsHistoryOpen(false);
     });
   };
 
   const checkHealthRules = (newDrinkIcon, newPortion) => {
     if (isExpertMode) return null;
-    const now = new Date();
-
-    // 1. 水與酒混用檢查 (Session-wide, 無時間限制)
+    
     const hasBeer = records.some(r => r.icon === '🍺');
     const hasWhiskey = records.some(r => r.icon === '🥃');
     const hasWater = records.some(r => r.icon === '💦');
-
-    // 如果要喝水，檢查是否喝過酒 (啤酒或烈酒)
+    
     if (newDrinkIcon === '💦' && (hasBeer || hasWhiskey)) {
         return '危險！💦不可與🍺或🥃混用！';
     }
 
-    // 如果要喝啤酒或烈酒，檢查是否喝過水
     if ((newDrinkIcon === '🍺' || newDrinkIcon === '🥃') && hasWater) {
         return '危險！💦不可與🍺或🥃混用！';
     }
 
     const lastRecord = records.length > 0 ? records[0] : null;
 
-    // 2. 紅酒頻率檢查 (間隔 < 30分鐘)
     if (newDrinkIcon === '🍷') {
       const lastWineRecord = records.find(r => r.icon === '🍷');
       if (lastWineRecord) {
          const lastWineTime = new Date(lastWineRecord.timestamp);
-         const diffMinutes = (now - lastWineTime) / (1000 * 60);
+         const diffMinutes = (new Date() - lastWineTime) / (1000 * 60);
          if (diffMinutes < 30) return '請留意距離上次使用並未超過30分鐘';
       }
     }
 
-    // 3. 哈密瓜交互作用 (保留4小時限制，因為這是特定的化學反應)
     if (lastRecord) {
       const lastTime = new Date(lastRecord.timestamp);
-      const diffHours = (now - lastTime) / (1000 * 60 * 60);
+      const diffHours = (new Date() - lastTime) / (1000 * 60 * 60);
       if (diffHours <= 4) {
         if ((newDrinkIcon === '🍈' && lastRecord.icon === '🍺') || (newDrinkIcon === '🍺' && lastRecord.icon === '🍈')) return '請留意過量的🍈與🍺容易造成斷片';
       }
     }
 
-    // 4. 水頻率檢查
     if (newDrinkIcon === '💦' && hasWater) {
       const recentWaterRecords = records.filter(r => {
         if (r.icon !== '💦') return false;
         const rTime = new Date(r.timestamp);
-        const diffHours = (now - rTime) / (1000 * 60 * 60);
+        const diffHours = (new Date() - rTime) / (1000 * 60 * 60);
         return diffHours <= 1;
       });
       const currentSum = recentWaterRecords.reduce((sum, r) => sum + r.portion, 0);
@@ -361,7 +484,9 @@ const PartyDrinkTracker = () => {
     }
 
     if (requireAddConfirm) {
-      openConfirmModal(`確定要記錄 ${drinkIcon} ${portion} 份嗎？`, doAdd);
+      const drinkObj = Object.values(allDrinks).find(d => d.icon === drinkIcon);
+      const drinkName = drinkObj ? drinkObj.name : drinkIcon;
+      openConfirmModal(`確定要記錄 ${drinkName} ${portion} 份嗎？`, doAdd);
     } else {
       doAdd();
     }
@@ -412,7 +537,7 @@ const PartyDrinkTracker = () => {
           {/* Settings Button */}
           {partyStatus !== 'idle' && (
             <button 
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() => { setIsSettingsOpen(true); setSettingsView('main'); }}
               className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             >
               <Settings size={24} />
@@ -470,84 +595,69 @@ const PartyDrinkTracker = () => {
                </button>
             </div>
 
-            {/* Drink Grid - Rendered based on LAYOUT */}
-            <div className="space-y-6 mt-6 animate-fade-in-up">
-              {layout.map((section, sectionIndex) => (
-                section.drinks.length > 0 && (
-                  <div key={section.id} className="space-y-3">
-                    {section.drinks.map((drinkId) => {
-                      const drink = allDrinks[drinkId];
-                      if (!drink) return null;
-                      
-                      const timeSince = getTimeSinceLastDrink(drink.icon);
-                      const drinkTotal = records.filter(r => r.icon === drink.icon).reduce((acc, curr) => acc + curr.totalAmount, 0);
+            {/* Drink Grid - Rendered based on Flat LAYOUT */}
+            <div className="space-y-3 mt-6 animate-fade-in-up pb-20">
+              {layout.map((drinkId, index) => {
+                const drink = allDrinks[drinkId];
+                if (!drink) return null;
+                
+                const timeSince = getTimeSinceLastDrink(drink.icon);
+                const drinkTotal = records.filter(r => r.icon === drink.icon).reduce((acc, curr) => acc + curr.totalAmount, 0);
 
-                      return (
-                        <div key={drink.id} className="bg-slate-800/80 backdrop-blur-sm p-4 rounded-xl border border-slate-700/50 flex items-center justify-between shadow-sm hover:border-slate-600 transition-colors">
-                          <div className="flex items-center gap-4">
-                            <div className="text-4xl filter drop-shadow-lg">{drink.icon}</div>
-                            <div className="flex flex-col items-start min-w-[70px]">
-                              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">
-                                 Total: <span className="text-white text-sm">{drinkTotal}</span>
-                              </div>
-                              {timeSince ? (
-                                <div className={`font-bold font-mono text-emerald-400 leading-none ${timeSince.length > 5 ? 'text-lg' : 'text-2xl'}`}>
-                                  {timeSince}
-                                </div>
-                              ) : (
-                                <div className="text-lg font-mono text-slate-600 leading-none">--</div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            {drink.portions.map((portion) => (
-                              <button
-                                key={portion}
-                                onClick={() => handleAddRecordClick(drink.icon, portion)}
-                                className={`
-                                  relative group overflow-hidden px-4 py-3 rounded-xl font-bold text-lg transition-all active:scale-95 border-b-4
-                                  ${drink.id === 'wine' ? 'bg-rose-900/30 border-rose-800 text-rose-200 hover:bg-rose-900/50' : ''}
-                                  ${drink.id === 'sake' ? 'bg-slate-200/10 border-slate-500 text-slate-200 hover:bg-slate-200/20' : ''}
-                                  ${drink.id === 'water' ? 'bg-cyan-900/30 border-cyan-800 text-cyan-200 hover:bg-cyan-900/50' : ''}
-                                  ${drink.id === 'melon' ? 'bg-green-900/30 border-green-800 text-green-200 hover:bg-green-900/50' : ''}
-                                  ${drink.id === 'beer' ? 'bg-amber-500/10 border-amber-600 text-amber-200 hover:bg-amber-500/20' : ''}
-                                  ${drink.id === 'whiskey' ? 'bg-orange-800/30 border-orange-700 text-orange-200 hover:bg-orange-800/50' : ''}
-                                  ${drink.isCustom ? 'bg-indigo-500/20 border-indigo-600 text-indigo-200 hover:bg-indigo-500/30' : ''}
-                                `}
-                              >
-                                {portion}
-                              </button>
-                            ))}
-                          </div>
+                return (
+                  <div key={drink.id} className="bg-slate-800/80 backdrop-blur-sm p-4 rounded-xl border border-slate-700/50 flex items-center justify-between shadow-sm hover:border-slate-600 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="text-4xl filter drop-shadow-lg">{drink.icon}</div>
+                      <div className="flex flex-col items-start min-w-[70px]">
+                        {/* 移除名稱顯示 */}
+                        <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">
+                           Total: <span className="text-white text-sm">{drinkTotal}</span>
                         </div>
-                      );
-                    })}
-                    {sectionIndex < layout.length - 1 && <div className="h-2" />}
+                        {timeSince ? (
+                          <div className={`font-bold font-mono text-emerald-400 leading-none ${timeSince.length > 5 ? 'text-lg' : 'text-2xl'}`}>
+                            {timeSince}
+                          </div>
+                        ) : (
+                          <div className="text-lg font-mono text-slate-600 leading-none">--</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      {drink.portions.map((portion) => (
+                        <button
+                          key={portion}
+                          onClick={() => handleAddRecordClick(drink.icon, portion)}
+                          className={`
+                            relative group overflow-hidden px-4 py-3 rounded-xl font-bold text-lg transition-all active:scale-95 border-b-4
+                            ${drink.id === 'wine' ? 'bg-rose-900/30 border-rose-800 text-rose-200 hover:bg-rose-900/50' : ''}
+                            ${drink.id === 'sake' ? 'bg-slate-200/10 border-slate-500 text-slate-200 hover:bg-slate-200/20' : ''}
+                            ${drink.id === 'water' ? 'bg-cyan-900/30 border-cyan-800 text-cyan-200 hover:bg-cyan-900/50' : ''}
+                            ${drink.id === 'melon' ? 'bg-green-900/30 border-green-800 text-green-200 hover:bg-green-900/50' : ''}
+                            ${drink.id === 'beer' ? 'bg-amber-500/10 border-amber-600 text-amber-200 hover:bg-amber-500/20' : ''}
+                            ${drink.id === 'whiskey' ? 'bg-orange-800/30 border-orange-700 text-orange-200 hover:bg-orange-800/50' : ''}
+                            ${drink.isCustom ? 'bg-indigo-500/20 border-indigo-600 text-indigo-200 hover:bg-indigo-500/30' : ''}
+                          `}
+                        >
+                          {portion}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                )
-              ))}
+                );
+              })}
             </div>
 
-            {records.length > 0 && (
-              <div className="pt-2 pb-6">
-                <div className="flex items-center gap-2 text-slate-500 text-xs px-2 mb-2 uppercase tracking-wider font-bold"><History size={12} /> Recent History</div>
-                <div className="space-y-2">
-                  {records.map((record) => (
-                    <div key={record.id} className="bg-slate-800/40 p-3 rounded-lg flex items-center justify-between border border-slate-700/30 animate-fade-in-right hover:bg-slate-800/60 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{record.icon}</span>
-                        <div>
-                           <div className="font-bold text-white">{record.portion} <span className="text-slate-500 text-xs font-normal">份</span></div>
-                           <span className="text-xs text-slate-500 flex items-center gap-1 font-mono"><Clock size={10} /> {formatTime(record.timestamp)}</span>
-                        </div>
-                      </div>
-                      <button onClick={() => deleteRecord(record.id)} className="p-2 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* History Trigger Button (Fixed at Bottom) */}
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent z-20 safe-area-bottom">
+              <button 
+                onClick={() => setIsHistoryOpen(true)}
+                className="w-full bg-slate-800/90 backdrop-blur-md border border-slate-700 text-slate-300 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 transition-colors shadow-lg"
+              >
+                <ScrollText size={18} /> 
+                查看歷史紀錄 ({records.length})
+              </button>
+            </div>
           </>
         )}
 
@@ -567,12 +677,68 @@ const PartyDrinkTracker = () => {
                 </div>
               ))}
             </div>
-            <button onClick={handleReset} className="w-full py-4 bg-slate-700 rounded-xl text-slate-200 font-bold shadow-lg hover:bg-slate-600 transition-colors flex items-center justify-center gap-2">
-              <History size={18} /> 開始新的一局
+            <button onClick={handleStartNewSession} className="w-full py-4 bg-slate-700 rounded-xl text-slate-200 font-bold shadow-lg hover:bg-slate-600 transition-colors flex items-center justify-center gap-2">
+              <RotateCw size={18} /> 開始新的一局
             </button>
           </div>
         )}
       </main>
+
+      {/* History Sheet / Modal */}
+      {isHistoryOpen && (
+        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center sm:p-4">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onClick={() => setIsHistoryOpen(false)} />
+          <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl w-full max-w-sm shadow-2xl relative z-10 animate-fade-in-up max-h-[80vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <History size={18} /> 歷史紀錄
+              </h3>
+              <div className="flex gap-2">
+                {records.length > 0 && (
+                  <button 
+                    onClick={handleClearHistory} 
+                    className="p-2 bg-red-900/30 text-red-400 rounded-full hover:bg-red-900/50 transition-colors"
+                    title="清除全部紀錄"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+                <button onClick={() => setIsHistoryOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable List */}
+            <div className="overflow-y-auto p-4 space-y-2 flex-1">
+              {records.length === 0 ? (
+                <div className="text-center text-slate-500 py-8">目前還沒有紀錄</div>
+              ) : (
+                records.map((record) => (
+                  <div key={record.id} className="bg-slate-800/40 p-3 rounded-lg flex items-center justify-between border border-slate-700/30">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">{record.icon}</span>
+                      <div className="flex flex-col">
+                         <div className="font-bold text-white text-lg">
+                           {record.portion} <span className="text-slate-500 text-xs font-normal">份</span>
+                         </div>
+                         <span className="text-xs text-slate-500 flex items-center gap-1 font-mono">
+                           <Clock size={10} /> {formatTime(record.timestamp)}
+                         </span>
+                      </div>
+                    </div>
+                    <button onClick={() => deleteRecord(record.id)} className="p-2 text-slate-600 hover:text-red-400 transition-colors">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {isSettingsOpen && (
@@ -580,112 +746,201 @@ const PartyDrinkTracker = () => {
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onClick={() => setIsSettingsOpen(false)} />
           <div className="bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-3xl w-full max-w-sm shadow-2xl relative z-10 animate-fade-in-up max-h-[85vh] overflow-y-auto">
             <div className="p-6">
+              
+              {/* Header with Back button if in sub-view */}
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2"><Settings size={20} /> 設定</h3>
+                <div className="flex items-center gap-2">
+                  {settingsView !== 'main' ? (
+                    <button onClick={() => setSettingsView('main')} className="p-1 rounded-full bg-slate-800 text-slate-300">
+                      <ChevronLeft size={20} />
+                    </button>
+                  ) : (
+                    <Settings size={20} className="text-white" />
+                  )}
+                  <h3 className="text-xl font-bold text-white">
+                    {settingsView === 'main' ? '設定' : '管理飲品清單'}
+                  </h3>
+                </div>
                 <button onClick={() => setIsSettingsOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
               
-              <div className="space-y-4">
-                {/* Double Check Toggle */}
-                <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
-                  <div>
-                    <div className="font-bold text-white mb-1">新增前確認</div>
-                    <div className="text-xs text-slate-400">點擊飲料時跳出確認視窗</div>
-                  </div>
-                  <button 
-                    onClick={() => setRequireAddConfirm(!requireAddConfirm)}
-                    className={`relative w-12 h-7 rounded-full transition-colors ${requireAddConfirm ? 'bg-violet-600' : 'bg-slate-700'}`}
-                  >
-                    <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${requireAddConfirm ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* Turbo Mode Toggle */}
-                <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
-                  <div>
-                    <div className="font-bold text-white mb-1 flex items-center gap-1">
-                      TURBO 模式 {isExpertMode && <Zap size={12} className="text-red-400" />}
+              {/* === MAIN SETTINGS VIEW === */}
+              {settingsView === 'main' && (
+                <div className="space-y-4">
+                  {/* 1. Turbo Mode Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
+                    <div>
+                      <div className="font-bold text-white mb-1 flex items-center gap-1">
+                        TURBO 模式 {isExpertMode && <Zap size={12} className="text-red-400" />}
+                      </div>
+                      <div className="text-xs text-slate-400">關閉所有健康警示 (請小心)</div>
                     </div>
-                    <div className="text-xs text-slate-400">關閉所有健康警示 (請小心)</div>
+                    <button 
+                      onClick={toggleMode}
+                      className={`relative w-12 h-7 rounded-full transition-colors ${isExpertMode ? 'bg-red-600' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${isExpertMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
                   </div>
+
+                  {/* 2. Double Check Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
+                    <div>
+                      <div className="font-bold text-white mb-1">新增前確認</div>
+                      <div className="text-xs text-slate-400">點擊飲料時跳出確認視窗</div>
+                    </div>
+                    <button 
+                      onClick={() => setRequireAddConfirm(!requireAddConfirm)}
+                      className={`relative w-12 h-7 rounded-full transition-colors ${requireAddConfirm ? 'bg-violet-600' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${requireAddConfirm ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  {/* 3. Manage Drink List Button */}
                   <button 
-                    onClick={toggleMode}
-                    className={`relative w-12 h-7 rounded-full transition-colors ${isExpertMode ? 'bg-red-600' : 'bg-slate-700'}`}
+                    onClick={() => setSettingsView('edit_drinks')}
+                    className="w-full p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-300 transition-all flex items-center justify-center gap-2"
                   >
-                    <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${isExpertMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                    <List size={18} /> 管理飲品清單
+                  </button>
+
+                  {/* 4. Reset All Settings (New Button) */}
+                  <button 
+                    onClick={handleResetAllSettings}
+                    className="w-full p-4 bg-transparent hover:bg-red-900/10 border border-transparent hover:border-red-900/30 rounded-xl text-xs text-slate-500 hover:text-red-400 transition-all flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw size={14} /> 重置所有設定 (保留紀錄)
+                  </button>
+
+                  {/* 5. Clear History */}
+                  <button 
+                    onClick={handleClearHistory}
+                    className="w-full p-4 bg-slate-800/80 hover:bg-red-900/20 border border-slate-700 hover:border-red-500/30 rounded-xl text-slate-300 hover:text-red-400 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Trash2 size={18} /> 清除派對紀錄
                   </button>
                 </div>
+              )}
 
-                {/* Clear History Button */}
-                <button 
-                  onClick={handleClearHistory}
-                  className="w-full p-4 bg-slate-800/80 hover:bg-red-900/20 border border-slate-700 hover:border-red-500/30 rounded-xl text-slate-300 hover:text-red-400 transition-all flex items-center justify-center gap-2"
-                >
-                  <Trash2 size={18} /> 清除所有紀錄
-                </button>
-
-                {/* Add Custom Drink Button */}
-                <button 
-                  onClick={() => { setIsSettingsOpen(false); setIsAddDrinkModalOpen(true); }}
-                  className="w-full p-4 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 rounded-xl text-indigo-200 transition-all flex items-center justify-center gap-2"
-                >
-                  <PlusCircle size={18} /> 新增自定義飲品
-                </button>
-              </div>
-
-              {/* 自訂排序 (Custom Layout) */}
-              <div className="bg-slate-800/30 rounded-xl border border-slate-700/50 overflow-hidden mt-4">
-                <div className="p-4 bg-slate-800/50 border-b border-slate-700/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <LayoutList size={16} className="text-slate-400"/>
-                    <span className="font-bold text-white">自訂版面排序</span>
+              {/* === EDIT DRINKS VIEW === */}
+              {settingsView === 'edit_drinks' && (
+                <div className="space-y-4">
+                  {/* Disclaimer Text */}
+                  <div className="p-3 bg-indigo-900/20 border border-indigo-500/20 rounded-xl text-xs text-indigo-200">
+                    注意：此處的飲品名稱僅供您管理參考，不會顯示於主頁面上（主頁面僅顯示圖示）。
                   </div>
-                  {/* Restore Defaults Button */}
-                  <button
-                    onClick={handleResetLayout}
-                    className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded transition-colors flex items-center gap-1"
-                  >
-                    <RotateCcw size={10} /> 恢復預設值
-                  </button>
-                </div>
-                <div className="p-2 space-y-4">
-                  {layout.map((section, sIdx) => (
-                    <div key={section.id} className="bg-slate-900/50 rounded-lg p-2 border border-slate-700/30">
-                      {/* 區塊標題與移動按鈕 */}
-                      <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-700/30">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2">{section.title}</span>
-                        <div className="flex gap-1">
-                           <button onClick={() => moveSection(sIdx, -1)} disabled={sIdx === 0} className="p-1.5 rounded hover:bg-slate-700 text-slate-400 disabled:opacity-30"><ArrowUp size={14}/></button>
-                           <button onClick={() => moveSection(sIdx, 1)} disabled={sIdx === layout.length - 1} className="p-1.5 rounded hover:bg-slate-700 text-slate-400 disabled:opacity-30"><ArrowDown size={14}/></button>
+
+                  <div className="text-xs text-slate-400 mb-2">
+                    點擊圖示修改 Emoji、拖曳排序、或刪除飲品。
+                  </div>
+                  
+                  {/* Unified Drink List based on Layout */}
+                  <div className="space-y-2">
+                    {layout.map((drinkId, index) => {
+                      const drink = allDrinks[drinkId];
+                      if (!drink) return null;
+                      
+                      const isModified = drinkNameOverrides[drink.id] || drinkEmojiOverrides[drink.id];
+                      const isCustom = customDrinks[drink.id];
+
+                      return (
+                        <div key={drink.id} className="bg-slate-800/50 p-2 rounded-xl border border-slate-700">
+                          <div className="flex items-center gap-3">
+                            {/* Sort Buttons */}
+                            <div className="flex flex-col gap-1">
+                               <button onClick={() => moveDrink(index, -1)} disabled={index === 0} className="p-1 rounded hover:bg-slate-700 text-slate-500 disabled:opacity-30"><ArrowUp size={10}/></button>
+                               <button onClick={() => moveDrink(index, 1)} disabled={index === layout.length - 1} className="p-1 rounded hover:bg-slate-700 text-slate-500 disabled:opacity-30"><ArrowDown size={10}/></button>
+                            </div>
+
+                            {/* Emoji Trigger */}
+                            <button 
+                              onClick={() => setEditingEmojiId(editingEmojiId === drink.id ? null : drink.id)}
+                              className="text-2xl p-1 rounded hover:bg-slate-700 relative group"
+                            >
+                              {drink.icon}
+                              <div className="absolute -bottom-1 -right-1 bg-slate-600 rounded-full p-0.5 opacity-0 group-hover:opacity-100">
+                                <Pencil size={8} />
+                              </div>
+                            </button>
+                            
+                            {/* Name Input */}
+                            <div className="flex-1">
+                              <input 
+                                type="text" 
+                                value={drink.name}
+                                onChange={(e) => handleUpdateName(drink.id, e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+
+                            {/* Restore Button (for defaults with changes) */}
+                            {isModified && !isCustom && (
+                              <button 
+                                onClick={() => handleRestoreDefault(drink.id)}
+                                className="p-2 text-slate-500 hover:text-white"
+                                title="還原預設"
+                              >
+                                <RotateCcw size={16} />
+                              </button>
+                            )}
+
+                            {/* Delete Button (Allowed for ALL drinks) */}
+                            <button 
+                              onClick={() => handleDeleteDrink(drink.id)}
+                              className="p-2 text-slate-500 hover:text-red-400"
+                              title="刪除"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+
+                          {/* Inline Emoji Picker */}
+                          {editingEmojiId === drink.id && (
+                            <div className="mt-2 pt-2 border-t border-slate-700/50 grid grid-cols-7 gap-1 animate-fade-in-up">
+                              {EMOJI_OPTIONS.map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleUpdateEmoji(drink.id, emoji)}
+                                  className={`text-xl p-1 rounded hover:bg-slate-700 ${drink.icon === emoji ? 'bg-indigo-600/30' : ''}`}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                      {/* 區塊內飲料列表 */}
-                      <div className="space-y-1">
-                        {section.drinks.map((dId, dIdx) => {
-                           const d = allDrinks[dId];
-                           if (!d) return null;
-                           return (
-                             <div key={dId} className="flex justify-between items-center bg-slate-800/50 px-3 py-2 rounded text-sm">
-                                <div className="flex items-center gap-2">
-                                   <span>{d.icon}</span>
-                                   <span className="text-slate-300">{d.name}</span>
-                                </div>
-                                <div className="flex gap-1">
-                                   <button onClick={() => moveDrink(sIdx, dIdx, -1)} disabled={dIdx === 0} className="p-1 rounded hover:bg-slate-700 text-slate-500 disabled:opacity-30"><ArrowUp size={12}/></button>
-                                   <button onClick={() => moveDrink(sIdx, dIdx, 1)} disabled={dIdx === section.drinks.length - 1} className="p-1 rounded hover:bg-slate-700 text-slate-500 disabled:opacity-30"><ArrowDown size={12}/></button>
-                                </div>
-                             </div>
-                           );
-                        })}
-                        {section.drinks.length === 0 && <div className="text-xs text-slate-600 text-center py-2">此區塊無飲品</div>}
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
+                  </div>
+
+                  {/* Add Custom Drink Button (Moved to Bottom) */}
+                  <button 
+                    onClick={() => { setIsAddDrinkModalOpen(true); }}
+                    className="w-full p-4 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 rounded-xl text-indigo-200 transition-all flex items-center justify-center gap-2 mt-4"
+                  >
+                    <PlusCircle size={18} /> 新增自定義飲品
+                  </button>
+
+                  {/* Restore Factory Settings Button */}
+                  <button 
+                    onClick={handleRestoreFactorySettings}
+                    className="w-full py-3 bg-transparent text-slate-500 hover:text-red-400 text-xs transition-colors flex items-center justify-center gap-2 mt-8 border-t border-slate-800 pt-4"
+                  >
+                    <RotateCcw size={14} /> 恢復原廠設定 (重置飲品清單)
+                  </button>
+
+                  <button 
+                    onClick={() => setSettingsView('main')}
+                    className="w-full mt-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Save size={18} /> 完成編輯
+                  </button>
                 </div>
-              </div>
+              )}
 
               <div className="mt-6 text-center text-xs text-slate-500">
-                Party Drink Tracker v1.3
+                Party Drink Tracker v1.9
               </div>
             </div>
           </div>
@@ -709,6 +964,7 @@ const PartyDrinkTracker = () => {
                   placeholder="例如: 龍舌蘭"
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">名稱僅供管理參考，不會顯示於主頁面。</p>
               </div>
 
               <div>
@@ -726,11 +982,11 @@ const PartyDrinkTracker = () => {
                 </div>
               </div>
 
-              <div className="bg-red-900/20 border border-red-900/30 p-3 rounded-lg flex gap-2">
-                <AlertCircle className="text-red-400 shrink-0" size={16} />
-                <p className="text-xs text-red-300">
-                  注意：自定義飲品將不會有任何健康交互作用警示。
-                </p>
+              <div className="bg-red-900/20 border border-red-900/30 p-3 rounded-lg flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <AlertCircle className="text-red-400 shrink-0" size={16} />
+                  <p className="text-xs text-red-300 font-bold">自定義飲品無健康警示功能。</p>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-2">
@@ -765,19 +1021,40 @@ const PartyDrinkTracker = () => {
               <p className="text-slate-300 leading-relaxed">{modalConfig.message}</p>
             </div>
             
+            {/* Modal Buttons Logic */}
             <div className="grid grid-cols-2 border-t border-slate-800 divide-x divide-slate-800">
-              <button 
-                onClick={closeModal} 
-                className="py-4 font-bold text-slate-400 hover:bg-slate-800 transition-colors"
-              >
-                取消
-              </button>
-              <button 
-                onClick={modalConfig.onConfirm} 
-                className={`py-4 font-bold text-white transition-colors ${modalConfig.type === 'warning' ? 'bg-red-600 hover:bg-red-500' : 'bg-violet-600 hover:bg-violet-500'}`}
-              >
-                {modalConfig.type === 'warning' ? '我了解了' : '確定'}
-              </button>
+              {modalConfig.type === 'choice' ? (
+                <>
+                  <button 
+                    onClick={modalConfig.onSecondary} 
+                    className="py-4 font-bold text-slate-400 hover:bg-slate-800 transition-colors"
+                  >
+                    {modalConfig.secondaryText}
+                  </button>
+                  <button 
+                    onClick={modalConfig.onConfirm} 
+                    className="py-4 font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+                  >
+                    {modalConfig.confirmText}
+                  </button>
+                  {/* Optional: Add a 3rd button for Cancel or rely on backdrop click */}
+                </>
+              ) : (
+                <>
+                  <button 
+                    onClick={closeModal} 
+                    className="py-4 font-bold text-slate-400 hover:bg-slate-800 transition-colors"
+                  >
+                    {modalConfig.cancelText}
+                  </button>
+                  <button 
+                    onClick={modalConfig.onConfirm} 
+                    className={`py-4 font-bold text-white transition-colors ${modalConfig.type === 'warning' ? 'bg-red-600 hover:bg-red-500' : 'bg-violet-600 hover:bg-violet-500'}`}
+                  >
+                    {modalConfig.confirmText}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
