@@ -5,6 +5,9 @@ import {
   Settings, X, ArrowUp, ArrowDown, LayoutList, PlusCircle, RotateCcw, Pencil, ChevronLeft, Save, RefreshCw, List, ScrollText, Copy, RotateCw
 } from 'lucide-react';
 
+// --- 版本號控制 (每次發布新版請修改這裡) ---
+const APP_VERSION = "v2.0";
+
 // --- 內嵌 SVG Logo 元件 ---
 const AppIcon = ({ size = 40, className = "" }) => (
   <svg 
@@ -115,6 +118,27 @@ const PartyDrinkTracker = () => {
 
   // ---------------- Effects ----------------
 
+  // ★★★ 自動清除 Service Worker 快取 (解決 PWA 更新問題) ★★★
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      try {
+        navigator.serviceWorker.getRegistrations()
+          .then(function(registrations) {
+            if (!registrations) return; // 防呆
+            for(let registration of registrations) {
+              registration.unregister();
+              console.log('Service Worker Unregistered to ensure updates.');
+            }
+          })
+          .catch(function(err) {
+            console.warn('Service Worker unregistration failed:', err);
+          });
+      } catch (e) {
+        console.warn('Service Worker API not available or restricted.');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     let interval;
     if (partyStatus === 'active' && startTime) {
@@ -206,6 +230,11 @@ const PartyDrinkTracker = () => {
   };
 
   const closeModal = () => { setModalConfig(prev => ({ ...prev, isOpen: false })); };
+
+  // 強制重新整理頁面
+  const handleForceReload = () => {
+    window.location.reload(true);
+  };
 
   const getTimeSinceLastDrink = (drinkIcon) => {
     const lastRecord = records.find(r => r.icon === drinkIcon);
@@ -813,13 +842,14 @@ const PartyDrinkTracker = () => {
                     <RefreshCw size={14} /> 重置所有設定 (保留紀錄)
                   </button>
 
-                  {/* 5. Clear History */}
+                  {/* 5. Force Reload Button */}
                   <button 
-                    onClick={handleClearHistory}
-                    className="w-full p-4 bg-slate-800/80 hover:bg-red-900/20 border border-slate-700 hover:border-red-500/30 rounded-xl text-slate-300 hover:text-red-400 transition-all flex items-center justify-center gap-2"
+                    onClick={handleForceReload}
+                    className="w-full p-3 bg-slate-900/50 border border-slate-700/50 rounded-xl text-xs text-slate-500 hover:text-white transition-all flex items-center justify-center gap-2 mt-4"
                   >
-                    <Trash2 size={18} /> 清除派對紀錄
+                    <RotateCw size={12} /> 檢查更新 (重新整理)
                   </button>
+                  <div className="text-center text-[10px] text-slate-600 font-mono">Version: {APP_VERSION}</div>
                 </div>
               )}
 
@@ -940,7 +970,7 @@ const PartyDrinkTracker = () => {
               )}
 
               <div className="mt-6 text-center text-xs text-slate-500">
-                Party Drink Tracker v1.9
+                Party Drink Tracker {APP_VERSION}
               </div>
             </div>
           </div>
@@ -1037,7 +1067,6 @@ const PartyDrinkTracker = () => {
                   >
                     {modalConfig.confirmText}
                   </button>
-                  {/* Optional: Add a 3rd button for Cancel or rely on backdrop click */}
                 </>
               ) : (
                 <>
