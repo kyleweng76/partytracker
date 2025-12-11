@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Play, Square, Trash2, History, Clock, 
   AlertTriangle, AlertCircle, Zap, ShieldCheck, 
-  Settings, X, ArrowUp, ArrowDown, LayoutList, PlusCircle, RotateCcw, Pencil, ChevronLeft, Save, RefreshCw, List, ScrollText, Copy, RotateCw
+  Settings, X, ArrowUp, ArrowDown, LayoutList, PlusCircle, RotateCcw, Pencil, ChevronLeft, Save, RefreshCw, List, ScrollText, RotateCw, GripVertical
 } from 'lucide-react';
 
-// --- 版本號控制 (每次發布新版請修改這裡) ---
-const APP_VERSION = "v2.0";
+// --- 版本號 ---
+const APP_VERSION = "v2.1";
 
 // --- 內嵌 SVG Logo 元件 ---
 const AppIcon = ({ size = 40, className = "" }) => (
@@ -84,13 +84,17 @@ const PartyDrinkTracker = () => {
 
   // UI State for Editing
   const [editingEmojiId, setEditingEmojiId] = useState(null);
+  
+  // Drag and Drop State (Desktop/Mouse)
+  const [dragItem, setDragItem] = useState(null);
+  const [dragOverItem, setDragOverItem] = useState(null);
 
   // Add Custom Drink Modal State
   const [isAddDrinkModalOpen, setIsAddDrinkModalOpen] = useState(false);
   const [newDrinkName, setNewDrinkName] = useState('');
   const [newDrinkIcon, setNewDrinkIcon] = useState(EMOJI_OPTIONS[0]);
 
-  // Unified Drinks Data (Static + Custom + Overrides)
+  // Unified Drinks Data
   const allDrinks = useMemo(() => {
     const combined = { ...STATIC_DRINK_KV, ...customDrinks };
     const final = {};
@@ -107,34 +111,31 @@ const PartyDrinkTracker = () => {
   // Modal State
   const [modalConfig, setModalConfig] = useState({
     isOpen: false,
-    type: 'confirm', // 'confirm', 'warning', or 'choice'
+    type: 'confirm',
     message: '',
     confirmText: '確定',
     cancelText: '取消',
-    secondaryText: '', // For choice modal
+    secondaryText: '',
     onConfirm: () => {},
-    onSecondary: () => {}, // For choice modal
+    onSecondary: () => {},
   });
 
   // ---------------- Effects ----------------
 
-  // ★★★ 自動清除 Service Worker 快取 (解決 PWA 更新問題) ★★★
+  // Service Worker Cleanup
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       try {
         navigator.serviceWorker.getRegistrations()
           .then(function(registrations) {
-            if (!registrations) return; // 防呆
+            if (!registrations) return;
             for(let registration of registrations) {
               registration.unregister();
-              console.log('Service Worker Unregistered to ensure updates.');
             }
           })
-          .catch(function(err) {
-            console.warn('Service Worker unregistration failed:', err);
-          });
+          .catch(err => console.warn('SW Cleanup Error:', err));
       } catch (e) {
-        console.warn('Service Worker API not available or restricted.');
+        console.warn('SW API Restricted');
       }
     }
   }, []);
@@ -231,7 +232,6 @@ const PartyDrinkTracker = () => {
 
   const closeModal = () => { setModalConfig(prev => ({ ...prev, isOpen: false })); };
 
-  // 強制重新整理頁面
   const handleForceReload = () => {
     window.location.reload(true);
   };
@@ -343,6 +343,30 @@ const PartyDrinkTracker = () => {
     });
   };
 
+  // --- Drag and Drop Handlers (Desktop / HTML5) ---
+  const handleDragStart = (e, index) => {
+    setDragItem(index);
+    e.dataTransfer.effectAllowed = "move";
+    // iOS Safari polyfill or hack requires simple approach, 
+    // but for true mobile drag, custom touch events are needed.
+    // Here we support standard desktop Drag for mouse users.
+  };
+
+  const handleDragEnter = (e, index) => {
+    setDragOverItem(index);
+  };
+
+  const handleDragEnd = (e) => {
+    const copyListItems = [...layout];
+    const dragItemContent = copyListItems[dragItem];
+    copyListItems.splice(dragItem, 1);
+    copyListItems.splice(dragOverItem, 0, dragItemContent);
+    setDragItem(null);
+    setDragOverItem(null);
+    setLayout(copyListItems);
+  };
+
+  // Button Sort Move
   const moveDrink = (index, direction) => {
     const newLayout = [...layout];
     const targetIndex = index + direction;
@@ -366,7 +390,7 @@ const PartyDrinkTracker = () => {
     setEndTime(null); 
     setRecords([]); 
     setIsExpertMode(false);
-    setRequireAddConfirm(true); // Reset to safe default on new session
+    setRequireAddConfirm(true); 
   };
 
   const resetSessionAndSettings = () => {
@@ -414,14 +438,14 @@ const PartyDrinkTracker = () => {
 
   const handleStartSafeParty = () => { 
     setIsExpertMode(false); 
-    setRequireAddConfirm(true); // Ensure confirmation is on
+    setRequireAddConfirm(true); 
     startPartyLogic(); 
   };
 
   const handleStartExpertParty = () => { 
     openWarningModal('請理解在此模式下不會跳出任何警示視窗，請自行留意安全。', () => { 
       setIsExpertMode(true); 
-      setRequireAddConfirm(false); // Auto disable confirmation for Turbo
+      setRequireAddConfirm(false); 
       startPartyLogic(); 
     }); 
   };
@@ -430,12 +454,12 @@ const PartyDrinkTracker = () => {
     if (isExpertMode) {
       openConfirmModal('確定要關閉 TURBO 模式嗎？將會恢復所有安全與健康警示。', () => {
         setIsExpertMode(false);
-        setRequireAddConfirm(true); // Auto enable confirmation when leaving Turbo
+        setRequireAddConfirm(true); 
       });
     } else {
       openWarningModal('開啟 TURBO 模式：請理解在此模式下不會跳出任何警示視窗，請自行留意安全。', () => {
         setIsExpertMode(true);
-        setRequireAddConfirm(false); // Auto disable confirmation when entering Turbo
+        setRequireAddConfirm(false); 
       });
     }
   };
@@ -862,7 +886,7 @@ const PartyDrinkTracker = () => {
                   </div>
 
                   <div className="text-xs text-slate-400 mb-2">
-                    點擊圖示修改 Emoji、拖曳排序、或刪除飲品。
+                    點擊圖示修改 Emoji、使用右側按鈕排序或刪除飲品。
                   </div>
                   
                   {/* Unified Drink List based on Layout */}
@@ -875,64 +899,91 @@ const PartyDrinkTracker = () => {
                       const isCustom = customDrinks[drink.id];
 
                       return (
-                        <div key={drink.id} className="bg-slate-800/50 p-2 rounded-xl border border-slate-700">
-                          <div className="flex items-center gap-3">
-                            {/* Sort Buttons */}
-                            <div className="flex flex-col gap-1">
-                               <button onClick={() => moveDrink(index, -1)} disabled={index === 0} className="p-1 rounded hover:bg-slate-700 text-slate-500 disabled:opacity-30"><ArrowUp size={10}/></button>
-                               <button onClick={() => moveDrink(index, 1)} disabled={index === layout.length - 1} className="p-1 rounded hover:bg-slate-700 text-slate-500 disabled:opacity-30"><ArrowDown size={10}/></button>
-                            </div>
+                        <div 
+                          key={drink.id} 
+                          className="bg-slate-800/50 p-2 rounded-xl border border-slate-700 flex items-center gap-3 transition-colors hover:border-slate-600"
+                          // Add HTML5 Draggable attributes
+                          draggable="true"
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragEnter={(e) => handleDragEnter(e, index)}
+                          onDragEnd={handleDragEnd}
+                          onDragOver={(e) => e.preventDefault()}
+                        >
+                          {/* Drag Handle Icon (Visual only on mobile, functional on desktop) */}
+                          <div className="text-slate-600 cursor-grab active:cursor-grabbing p-1">
+                            <GripVertical size={16} />
+                          </div>
 
-                            {/* Emoji Trigger */}
-                            <button 
-                              onClick={() => setEditingEmojiId(editingEmojiId === drink.id ? null : drink.id)}
-                              className="text-2xl p-1 rounded hover:bg-slate-700 relative group"
-                            >
-                              {drink.icon}
-                              <div className="absolute -bottom-1 -right-1 bg-slate-600 rounded-full p-0.5 opacity-0 group-hover:opacity-100">
-                                <Pencil size={8} />
-                              </div>
-                            </button>
-                            
-                            {/* Name Input */}
-                            <div className="flex-1">
-                              <input 
-                                type="text" 
-                                value={drink.name}
-                                onChange={(e) => handleUpdateName(drink.id, e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-indigo-500"
-                              />
+                          {/* Emoji Trigger */}
+                          <button 
+                            onClick={() => setEditingEmojiId(editingEmojiId === drink.id ? null : drink.id)}
+                            className="text-2xl p-1 rounded hover:bg-slate-700 relative group shrink-0"
+                          >
+                            {drink.icon}
+                            <div className="absolute -bottom-1 -right-1 bg-slate-600 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Pencil size={8} />
                             </div>
+                          </button>
+                          
+                          {/* Name Input */}
+                          <div className="flex-1">
+                            <input 
+                              type="text" 
+                              value={drink.name}
+                              onChange={(e) => handleUpdateName(drink.id, e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
 
-                            {/* Restore Button (for defaults with changes) */}
+                          {/* Action Buttons Group */}
+                          <div className="flex items-center gap-1">
+                            {/* Restore Button */}
                             {isModified && !isCustom && (
                               <button 
                                 onClick={() => handleRestoreDefault(drink.id)}
-                                className="p-2 text-slate-500 hover:text-white"
+                                className="p-2 text-slate-500 hover:text-white transition-colors"
                                 title="還原預設"
                               >
                                 <RotateCcw size={16} />
                               </button>
                             )}
 
-                            {/* Delete Button (Allowed for ALL drinks) */}
+                            {/* Delete Button */}
                             <button 
                               onClick={() => handleDeleteDrink(drink.id)}
-                              className="p-2 text-slate-500 hover:text-red-400"
+                              className="p-2 text-slate-500 hover:text-red-400 transition-colors"
                               title="刪除"
                             >
                               <Trash2 size={16} />
                             </button>
+
+                            {/* Sort Arrows (Improved UI for Mobile) */}
+                            <div className="flex flex-col gap-1 ml-1 pl-1 border-l border-slate-700">
+                               <button 
+                                 onClick={() => moveDrink(index, -1)} 
+                                 disabled={index === 0} 
+                                 className="p-1.5 bg-slate-700/50 rounded hover:bg-slate-600 text-slate-400 disabled:opacity-20 active:scale-95 transition-all"
+                               >
+                                 <ArrowUp size={12}/>
+                               </button>
+                               <button 
+                                 onClick={() => moveDrink(index, 1)} 
+                                 disabled={index === layout.length - 1} 
+                                 className="p-1.5 bg-slate-700/50 rounded hover:bg-slate-600 text-slate-400 disabled:opacity-20 active:scale-95 transition-all"
+                               >
+                                 <ArrowDown size={12}/>
+                               </button>
+                            </div>
                           </div>
 
-                          {/* Inline Emoji Picker */}
+                          {/* Inline Emoji Picker (Conditional Render) */}
                           {editingEmojiId === drink.id && (
-                            <div className="mt-2 pt-2 border-t border-slate-700/50 grid grid-cols-7 gap-1 animate-fade-in-up">
+                            <div className="absolute left-0 right-0 mt-14 z-20 mx-2 p-2 bg-slate-800 border border-slate-600 rounded-xl shadow-xl grid grid-cols-7 gap-1 animate-fade-in-up">
                               {EMOJI_OPTIONS.map(emoji => (
                                 <button
                                   key={emoji}
                                   onClick={() => handleUpdateEmoji(drink.id, emoji)}
-                                  className={`text-xl p-1 rounded hover:bg-slate-700 ${drink.icon === emoji ? 'bg-indigo-600/30' : ''}`}
+                                  className={`text-xl p-2 rounded hover:bg-slate-600 transition-colors ${drink.icon === emoji ? 'bg-indigo-600/50 ring-1 ring-indigo-400' : ''}`}
                                 >
                                   {emoji}
                                 </button>
